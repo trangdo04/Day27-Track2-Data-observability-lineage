@@ -58,9 +58,14 @@ def write_summary(summary: dict[str, int | str], output_path: str | Path) -> Pat
     output_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return output_file
 
-
-def send_discord_message(summary: dict[str, int | str], webhook_url: str = DISCORD_WEBHOOK_URL) -> None:
-    if not webhook_url:
+def send_discord_message(summary: dict[str, int | str], webhook_url: str = None) -> None:
+    # Nếu không truyền webhook_url vào hàm, lấy từ biến DISCORD_WEBHOOK_URL toàn cục
+    if webhook_url is None:
+        webhook_url = DISCORD_WEBHOOK_URL
+        
+    # Kiểm tra xem webhook_url có hợp lệ không (tránh trường hợp biến rỗng hoặc bằng None)
+    if not webhook_url or not webhook_url.startswith("http"):
+        print("⚠️ Warning: Discord Webhook URL rỗng hoặc không hợp lệ. Bỏ qua gửi tin nhắn.")
         return
 
     message = (
@@ -71,16 +76,29 @@ def send_discord_message(summary: dict[str, int | str], webhook_url: str = DISCO
         f"Invalid statuses: {summary['invalid_statuses']}"
     )
     payload = json.dumps({"content": message}).encode("utf-8")
+    
+    # Sửa đổi ở đây: Thêm User-Agent giả lập trình duyệt vào headers
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
     http_request = request.Request(
         webhook_url,
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
-    with request.urlopen(http_request, timeout=15) as response:
-        if response.status >= 400:
-            raise RuntimeError(f"Discord webhook failed with status {response.status}")
-
+    
+    try:
+        with request.urlopen(http_request, timeout=15) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Discord webhook failed with status {response.status}")
+    except error.HTTPError as e:
+        print(f"❌ HTTP Error xảy ra: {e.code} - {e.reason}")
+        # Nếu vẫn bị 403, hãy in ra URL để kiểm tra xem URL có bị cấu hình sai không
+        print(f"🔗 URL đang sử dụng: {webhook_url}")
+        raise e
 
 def run_lab_check(
     input_path: str | Path,
